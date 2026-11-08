@@ -12,6 +12,7 @@ mkdir -p "$(dirname "$out")"
   echo '<style>'; cat styles.css; echo '</style>'
   sed -n '/<header class="top">/,/<\/nav>/p' index.html
   echo '<script>'; cat plan.js; echo '</script>'
+  echo '<script>'; cat nutrition.js; echo '</script>'
   # На странице claude.ai скачивание файлов запрещено, поэтому убираем кнопку «Скачать копию» — остаётся «Скопировать копию».
   echo '<script>'; grep -v 'data-act="export"' app.js; echo '</script>'
 } > "$out"

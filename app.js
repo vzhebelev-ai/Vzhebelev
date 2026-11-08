@@ -1,9 +1,19 @@
-/* global EXERCISES, WARMUP, DAYS, EXTRA, PROGRESSION, targetReps */
+/* global EXERCISES, WARMUP, DAYS, EXTRA, PROGRESSION, targetReps, NUTRITION */
 "use strict";
 
 // ---------- Хранилище ----------
 const KEY = "workout-tracker.v1";
-const DEFAULT_STATE = { sessions: [], draft: null, settings: { startDate: "", rest: 90 } };
+const TABS = ["workout", "food", "history", "report", "plan"];
+const DEFAULT_STATE = {
+  sessions: [], draft: null,
+  weights: [{ date: NUTRITION.startDate, kg: NUTRITION.startWeight }],
+  food: {}, // { "2026-11-08": { breakfast: true, shake: true } }
+  settings: {
+    startDate: "", rest: 90,
+    kcal: NUTRITION.kcal, protein: NUTRITION.protein,
+    goalWeight: NUTRITION.goalWeight, goalDate: NUTRITION.goalDate,
+  },
+};
 
 function load() {
   try {
@@ -21,7 +31,7 @@ function save() {
 
 let state = load();
 let tab = (location.hash || "").slice(1) || "workout";
-let ui = { day: null, confirm: null, reportPeriod: "6w", reportEx: "pullups", openHist: null };
+let ui = { day: null, confirm: null, reportPeriod: "6w", reportEx: "pullups", openHist: null, foodDate: null };
 
 // ---------- Утилиты ----------
 const $ = (s, r = document) => r.querySelector(s);
@@ -133,7 +143,7 @@ function render() {
   const wi = weekInfo();
   $("#weekPill").textContent = `Неделя ${wi.week}/6${wi.cycle > 1 ? ` · цикл ${wi.cycle}` : ""}`;
   const view = $("#view");
-  view.innerHTML = { workout: viewWorkout, history: viewHistory, report: viewReport, plan: viewPlan }[tab]();
+  view.innerHTML = { workout: viewWorkout, food: viewFood, history: viewHistory, report: viewReport, plan: viewPlan }[tab]();
 }
 
 function techBlock(ex) {
@@ -215,6 +225,7 @@ function viewWorkout() {
       <span class="small muted num">Неделя ${wi.week}: ${esc(progressionText(wi.week))}</span>
     </div>
     ${alerts.map((a) => `<div class="note">${esc(a)}</div>`).join("")}
+    ${foodStrip(d.date)}
     <section class="panel">
       <div class="ex-head"><h2>Разминка плеча · 5 мин</h2><span class="ex-count ${warmDone === WARMUP.length ? "full" : ""}">${warmDone}/${WARMUP.length}</span></div>
       <div class="checks">${warm}</div>
@@ -337,7 +348,7 @@ function lineChart(points, unit) {
 
 function viewReport() {
   const all = sortedSessions();
-  if (!all.length) return `<div class="panel empty"><h2>Отчёт появится после первой тренировки</h2><p>Здесь будут тоннаж по неделям, регулярность, прогресс по каждому упражнению и личные рекорды.</p></div>`;
+  if (!all.length) return `<div class="panel empty"><h2>Отчёт по тренировкам появится после первой тренировки</h2><p>Здесь будут тоннаж по неделям, регулярность, прогресс по каждому упражнению и личные рекорды.</p></div>${reportFood("0000")}`;
   const periods = { "4w": 28, "6w": 42, all: Infinity };
   const days = periods[ui.reportPeriod];
   const cutoff = days === Infinity ? "0000" : isoOf(new Date(Date.now() - days * 86400000));
@@ -440,6 +451,7 @@ function viewReport() {
           <td class="n">${r.bestTotal}</td><td class="n">${r.sessions}</td><td class="n">${fmtDate(r.lastDate)}</td></tr>`).join("")}</tbody>
       </table></div>
     </section>
+    ${reportFood(cutoff)}
     <section class="panel">
       <h2>Самочувствие за период</h2>
       <div class="row">
@@ -468,6 +480,15 @@ function viewPlan() {
         <label class="small muted" for="startDate">Начало программы</label>
         <input type="date" id="startDate" data-act="start" value="${startDate()}">
       </div>
+    </section>
+    <section class="panel">
+      <h2>Цель: набор массы</h2>
+      <p class="small">Рост ${NUTRITION.height} см, вес ${kg(NUTRITION.startWeight)} кг → ${kg(state.settings.goalWeight)} кг к ${fmtDate(state.settings.goalDate, { day: "numeric", month: "long" })}. Питание — ${fmtNum(state.settings.kcal)} ккал и не меньше ${state.settings.protein} г белка в день, 5 приёмов пищи.</p>
+      <ul class="plan-list">
+        ${NUTRITION.meals.map((m) => `<li><span>${m.time} · ${esc(m.name)}</span><span>${m.kcal} ккал · ${m.p} г</span></li>`).join("")}
+      </ul>
+      <p class="small muted">Связка с тренировками: в день A/B/C приём «До тренировки» — за 1,5–2 ч до неё, ужин — в течение 1–2 ч после. Прогрессия весов из плана ниже — главный сигнал телу строить мышцы, без неё профицит уходит в жир.</p>
+      <div><button type="button" class="btn ghost small" data-tab="food">Рацион и вес</button></div>
     </section>
     <section class="panel">
       <h2>Стартовые веса</h2>
@@ -524,6 +545,183 @@ function viewPlan() {
       ${ui.confirm === "wipe"
         ? `<div class="confirm"><span>Удалить все тренировки без возможности восстановления?</span><button type="button" class="btn danger small" data-act="wipe-yes">Удалить всё</button><button type="button" class="btn ghost small" data-act="cancel">Отмена</button></div>`
         : `<div><button type="button" class="btn ghost small" data-act="wipe">Удалить все данные</button></div>`}
+    </section>`;
+}
+
+// ---------- Питание и вес ----------
+const FOODS = [...NUTRITION.meals, ...NUTRITION.extras];
+const daysBetween = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 86400000);
+const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return isoOf(d); };
+const kg = (n) => (Math.round(n * 10) / 10).toLocaleString("ru-RU");
+
+function dayIntake(date) {
+  const day = state.food[date] || {};
+  return FOODS.reduce((a, f) => (day[f.id] ? { kcal: a.kcal + f.kcal, p: a.p + f.p, n: a.n + 1 } : a), { kcal: 0, p: 0, n: 0 });
+}
+function isTrainingDay(date) {
+  return state.sessions.some((s) => s.date === date) || (state.draft && state.draft.date === date && draftStarted(state.draft));
+}
+const weightsAsc = () => [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+// Среднее за 7 дней, заканчивающихся датой end
+function avgWeight(end) {
+  const from = addDays(end, -6);
+  const w = state.weights.filter((x) => x.date >= from && x.date <= end);
+  return w.length ? w.reduce((a, x) => a + x.kg, 0) / w.length : null;
+}
+function goalInfo() {
+  const st = state.settings;
+  const ws = weightsAsc();
+  const start = ws[0] || { date: NUTRITION.startDate, kg: NUTRITION.startWeight };
+  const last = ws[ws.length - 1] || start;
+  const today = todayISO();
+  const totalDays = Math.max(1, daysBetween(start.date, st.goalDate));
+  const planToday = start.kg + (st.goalWeight - start.kg) * Math.min(1, Math.max(0, daysBetween(start.date, today) / totalDays));
+  const daysLeft = Math.max(0, daysBetween(today, st.goalDate));
+  const current = avgWeight(last.date) ?? last.kg;
+  const needPace = daysLeft ? (st.goalWeight - current) / (daysLeft / 7) : 0;
+  // Темп за последние 2 недели по средним
+  const prev = avgWeight(addDays(last.date, -14));
+  const pace = prev !== null && daysBetween(start.date, last.date) >= 14 ? (current - prev) / 2 : null;
+  const diff = current - planToday;
+  let status = { cls: "ok", text: "По графику" };
+  if (diff < -0.5) status = { cls: "warn", text: `Отстаёте на ${kg(-diff)} кг` };
+  else if (diff > 0.7) status = { cls: "warn", text: `Быстрее плана на ${kg(diff)} кг` };
+  return { start, last, current, planToday, daysLeft, needPace, pace, status, gained: current - start.kg };
+}
+function bar(value, target) {
+  const pct = Math.min(100, Math.round((100 * value) / Math.max(1, target)));
+  return `<div class="meter"><div class="meter-fill ${value >= target ? "full" : ""}" style="width:${pct}%"></div></div>`;
+}
+
+function foodStrip(date) {
+  const st = state.settings;
+  const it = dayIntake(date);
+  return `<section class="panel">
+    <div class="row spread"><h2>Питание сегодня</h2><button type="button" class="btn ghost small" data-tab="food">Открыть</button></div>
+    <div class="macro"><span>Калории</span><b class="num">${fmtNum(it.kcal)} / ${fmtNum(st.kcal)}</b></div>${bar(it.kcal, st.kcal)}
+    <div class="macro"><span>Белок</span><b class="num">${it.p} / ${st.protein} г</b></div>${bar(it.p, st.protein)}
+    <p class="small muted">День тренировки: приём «До тренировки» — за 1,5–2 ч до неё, ужин — в течение 1–2 ч после.</p>
+  </section>`;
+}
+
+function weightChart() {
+  const st = state.settings;
+  const ws = weightsAsc();
+  const g = goalInfo();
+  const x0 = g.start.date;
+  const x1 = [st.goalDate, ws.length ? ws[ws.length - 1].date : st.goalDate].sort().pop();
+  const W = 360, H = 190, pl = 34, pr = 14, pt = 16, pb = 26;
+  const vals = [...ws.map((w) => w.kg), g.start.kg, st.goalWeight];
+  const lo = Math.floor(Math.min(...vals) - 0.5), hi = Math.ceil(Math.max(...vals) + 0.5);
+  const span = Math.max(1, daysBetween(x0, x1));
+  const x = (d) => pl + (W - pl - pr) * (daysBetween(x0, d) / span);
+  const y = (v) => pt + (H - pt - pb) * (1 - (v - lo) / (hi - lo));
+  const ticks = [];
+  for (let v = lo; v <= hi; v += hi - lo > 6 ? 2 : 1) ticks.push(v);
+  const path = ws.map((w, i) => `${i ? "L" : "M"}${x(w.date).toFixed(1)},${y(w.kg).toFixed(1)}`).join(" ");
+  const months = [];
+  for (let d = parseISO(x0); isoOf(d) <= x1; d.setDate(d.getDate() + 1)) if (d.getDate() === 1 || d.getDate() === 15) months.push(isoOf(d));
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Вес и план набора">
+    ${ticks.map((t) => `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(t)}" y2="${y(t)}"/><text x="${pl - 6}" y="${y(t) + 4}" text-anchor="end">${t}</text>`).join("")}
+    <line class="goal" x1="${x(x0)}" y1="${y(g.start.kg)}" x2="${x(st.goalDate)}" y2="${y(st.goalWeight)}"/>
+    <text class="val" x="${x(st.goalDate)}" y="${y(st.goalWeight) - 8}" text-anchor="end">цель ${kg(st.goalWeight)}</text>
+    ${ws.length > 1 ? `<path class="line" d="${path}"/>` : ""}
+    ${ws.map((w, i) => `<circle class="dot ${i === ws.length - 1 ? "last" : ""}" cx="${x(w.date)}" cy="${y(w.kg)}" r="3.5"/>`).join("")}
+    ${months.map((d) => `<text x="${x(d)}" y="${H - 8}" text-anchor="middle">${fmtDate(d)}</text>`).join("")}
+  </svg>`;
+}
+
+function viewFood() {
+  const st = state.settings;
+  const g = goalInfo();
+  const date = ui.foodDate || todayISO();
+  const day = state.food[date] || {};
+  const it = dayIntake(date);
+  const training = isTrainingDay(date);
+  const mealRow = (f) => `<label class="check meal ${day[f.id] ? "on" : ""}">
+      <input type="checkbox" data-act="meal" data-id="${f.id}" ${day[f.id] ? "checked" : ""}>
+      <span class="meal-body">
+        <span class="meal-head"><b>${f.time ? `<span class="muted num">${f.time}</span> ` : ""}${esc(f.name)}</b><span class="num muted">${f.kcal} ккал · ${f.p} г белка</span></span>
+        <span class="small">${f.items.map(esc).join(" · ")}</span>
+        ${f.note ? `<span class="small muted">${esc(f.note)}</span>` : ""}
+      </span></label>`;
+  const recent = weightsAsc().slice(-5).reverse();
+  return `
+    <section class="panel">
+      <div class="row spread"><h2>Цель: ${kg(st.goalWeight)} кг к ${fmtDate(st.goalDate, { day: "numeric", month: "long" })}</h2><span class="flag ${g.status.cls}">${g.status.text}</span></div>
+      <div class="kpis">
+        <div class="kpi"><b>${kg(g.current)}</b><span>кг сейчас (ср. 7 дн.)</span></div>
+        <div class="kpi"><b>${g.gained >= 0 ? "+" : ""}${kg(g.gained)}</b><span>кг набрано</span></div>
+        <div class="kpi"><b>${kg(Math.max(0, st.goalWeight - g.current))}</b><span>кг осталось</span></div>
+        <div class="kpi"><b>${g.daysLeft}</b><span>${plural(g.daysLeft, "день", "дня", "дней")} до цели</span></div>
+      </div>
+      ${weightChart()}
+      <p class="small muted">Пунктир — план набора. По плану сегодня ${kg(g.planToday)} кг. Нужный темп: <b class="num">${g.needPace > 0 ? "+" + kg(g.needPace) : "0"} кг/нед</b>${g.pace !== null ? `, ваш темп за 2 недели: <b class="num">${g.pace >= 0 ? "+" : ""}${kg(g.pace)} кг/нед</b>` : ""}.</p>
+      ${g.pace !== null && g.pace < 0.3 ? `<div class="note">Прибавка меньше +0,3 кг в неделю — добавьте 200–300 ккал: коктейль или стакан молока перед сном.</div>` : ""}
+      ${g.pace !== null && g.pace > 0.8 ? `<div class="note">Прибавка больше +0,8 кг в неделю — уберите 150–200 ккал, иначе пойдёт в жир.</div>` : ""}
+      <div class="row">
+        <input type="date" id="wDate" value="${todayISO()}" aria-label="Дата взвешивания">
+        <label class="field" style="width:110px"><input type="number" id="wKg" inputmode="decimal" step="0.1" min="30" max="200" placeholder="${kg(g.last.kg)}" aria-label="Вес, кг"><span>кг</span></label>
+        <button type="button" class="btn small" data-act="weigh">Записать вес</button>
+      </div>
+      <div class="small muted">Взвешивайтесь утром натощак. Последние: ${recent.map((w) => `${fmtDate(w.date)} — <b class="num">${kg(w.kg)}</b> <button type="button" class="linkbtn" data-act="wdel" data-date="${w.date}" aria-label="Удалить запись">×</button>`).join(", ")}</div>
+    </section>
+
+    <section class="panel">
+      <div class="row spread">
+        <h2>Рацион · ${fmtNum(st.kcal)} ккал</h2>
+        <input type="date" id="foodDate" data-act="foodDate" value="${date}" aria-label="День">
+      </div>
+      ${training ? `<div class="note info">Тренировочный день: «До тренировки» — за 1,5–2 ч, ужин — в течение 1–2 ч после.</div>` : ""}
+      <div class="macro"><span>Калории</span><b class="num">${fmtNum(it.kcal)} / ${fmtNum(st.kcal)}</b></div>${bar(it.kcal, st.kcal)}
+      <div class="macro"><span>Белок</span><b class="num">${it.p} / ${st.protein} г</b></div>${bar(it.p, st.protein)}
+      <div class="checks">${NUTRITION.meals.map(mealRow).join("")}</div>
+      <h3>Добавки, если вес стоит</h3>
+      <div class="checks">${NUTRITION.extras.map(mealRow).join("")}</div>
+      <p class="small muted">Отмечайте съеденное. Жиры ${NUTRITION.fat}, углеводы ${NUTRITION.carbs} в день — план это уже даёт.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Замены продуктов</h2>
+      <ul class="plan-list">${NUTRITION.swaps.map(([a, b]) => `<li><span>${esc(a)}</span><span class="swap">${esc(b)}</span></li>`).join("")}</ul>
+    </section>
+
+    <section class="panel">
+      <h2>Правила набора</h2>
+      <ol class="prog">${NUTRITION.rules.map((r) => `<li>${esc(r)}</li>`).join("")}</ol>
+      <div class="note info">${esc(NUTRITION.honesty)}</div>
+    </section>
+
+    <section class="panel">
+      <h2>Мои цифры</h2>
+      <p class="small muted">Рост ${NUTRITION.height} см, старт ${kg(NUTRITION.startWeight)} кг. Калории — оценка для взрослого мужчины с умеренной активностью; поправьте по факту прибавки.</p>
+      <div class="row">
+        <label class="small muted" for="setKcal">Ккал в день</label><input type="number" class="plain num" id="setKcal" data-act="setnum" data-k="kcal" step="50" value="${st.kcal}" style="width:90px">
+        <label class="small muted" for="setP">Белок, г</label><input type="number" class="plain num" id="setP" data-act="setnum" data-k="protein" step="5" value="${st.protein}" style="width:80px">
+      </div>
+      <div class="row">
+        <label class="small muted" for="setGoal">Цель, кг</label><input type="number" class="plain num" id="setGoal" data-act="setnum" data-k="goalWeight" step="0.5" value="${st.goalWeight}" style="width:80px">
+        <label class="small muted" for="setGoalDate">К дате</label><input type="date" id="setGoalDate" data-act="goalDate" value="${st.goalDate}">
+      </div>
+    </section>`;
+}
+
+function reportFood(cutoff) {
+  const g = goalInfo();
+  const days = Object.keys(state.food).filter((d) => d >= cutoff && dayIntake(d).n > 0).sort();
+  const last7 = days.filter((d) => d > addDays(todayISO(), -7));
+  const avg = (arr, k) => (arr.length ? Math.round(arr.reduce((a, d) => a + dayIntake(d)[k], 0) / arr.length) : 0);
+  const hit = days.filter((d) => dayIntake(d).kcal >= state.settings.kcal * 0.9).length;
+  return `<section class="panel">
+      <div class="row spread"><h2>Вес и питание</h2><span class="flag ${g.status.cls}">${g.status.text}</span></div>
+      ${weightChart()}
+      <p class="small muted">Сейчас ${kg(g.current)} кг (${g.gained >= 0 ? "+" : ""}${kg(g.gained)} кг от старта), по плану ${kg(g.planToday)} кг. Цель ${kg(state.settings.goalWeight)} кг.</p>
+      <div class="kpis">
+        <div class="kpi"><b>${fmtNum(avg(last7, "kcal"))}</b><span>ккал в среднем за 7 дней</span></div>
+        <div class="kpi"><b>${avg(last7, "p")}</b><span>г белка в среднем за 7 дней</span></div>
+        <div class="kpi"><b>${days.length}</b><span>${plural(days.length, "день", "дня", "дней")} с отметками</span></div>
+        <div class="kpi"><b>${hit}</b><span>из них ≥90% калорий</span></div>
+      </div>
     </section>`;
 }
 
@@ -587,6 +785,18 @@ document.addEventListener("click", (e) => {
     case "period": ui.reportPeriod = t.dataset.p; break;
     case "timer-add": timerEnd += 30000; $("#timer").classList.remove("finished"); clearInterval(timerId); timerId = setInterval(tickTimer, 250); tickTimer(); return;
     case "timer-stop": stopTimer(); return;
+    case "meal": return; // обрабатывается в change
+    case "weigh": {
+      const v = parseFloat(String($("#wKg").value).replace(",", "."));
+      const dt = $("#wDate").value || todayISO();
+      if (!(v > 30 && v < 200)) { $("#wKg").focus(); return; }
+      state.weights = state.weights.filter((w) => w.date !== dt);
+      state.weights.push({ date: dt, kg: Math.round(v * 10) / 10 });
+      break;
+    }
+    case "wdel":
+      if (state.weights.length > 1) state.weights = state.weights.filter((w) => w.date !== t.dataset.date);
+      break;
     case "export": exportData(); return;
     case "copy": copyData(); return;
     case "paste-import": importText($("#backupText").value); return;
@@ -607,6 +817,14 @@ document.addEventListener("change", (e) => {
   else if (act === "start" && t.value) state.settings.startDate = t.value;
   else if (act === "rest") state.settings.rest = Math.max(0, +t.value || 0);
   else if (act === "reportEx") ui.reportEx = t.value;
+  else if (act === "meal") {
+    const dt = ui.foodDate || todayISO();
+    const day = (state.food[dt] = state.food[dt] || {});
+    if (t.checked) day[t.dataset.id] = true; else delete day[t.dataset.id];
+  }
+  else if (act === "foodDate" && t.value) ui.foodDate = t.value === todayISO() ? null : t.value;
+  else if (act === "setnum" && +t.value > 0) state.settings[t.dataset.k] = +t.value;
+  else if (act === "goalDate" && t.value) state.settings.goalDate = t.value;
   else if (t.id === "importFile") { importData(t.files[0]); return; }
   else return;
   save();
@@ -653,6 +871,8 @@ function importText(text) {
     const ids = new Set(state.sessions.map((s) => s.id));
     const added = data.sessions.filter((s) => !ids.has(s.id));
     state.sessions.push(...added);
+    if (Array.isArray(data.weights)) for (const w of data.weights) if (!state.weights.some((x) => x.date === w.date)) state.weights.push(w);
+    if (data.food && typeof data.food === "object") for (const [d, v] of Object.entries(data.food)) state.food[d] = { ...v, ...(state.food[d] || {}) };
     if (data.settings && data.settings.startDate && !state.settings.startDate) state.settings.startDate = data.settings.startDate;
     save(); render();
     $("#dataMsg").textContent = `Загружено тренировок: ${added.length}.`;
@@ -669,8 +889,8 @@ function importData(file) {
 
 window.addEventListener("hashchange", () => {
   const h = location.hash.slice(1);
-  if (["workout", "history", "report", "plan"].includes(h) && h !== tab) { tab = h; render(); }
+  if (TABS.includes(h) && h !== tab) { tab = h; render(); }
 });
 
-if (!["workout", "history", "report", "plan"].includes(tab)) tab = "workout";
+if (!TABS.includes(tab)) tab = "workout";
 render();
