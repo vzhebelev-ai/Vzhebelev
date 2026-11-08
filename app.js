@@ -516,7 +516,10 @@ function viewPlan() {
         <button type="button" class="btn ghost small" data-act="export">Скачать копию (JSON)</button>
         <label class="btn ghost small" for="importFile">Загрузить копию</label>
         <input type="file" id="importFile" accept="application/json,.json" hidden>
+        <button type="button" class="btn ghost small" data-act="copy">Скопировать копию</button>
       </div>
+      <textarea id="backupText" placeholder="Сюда можно вставить скопированную копию"></textarea>
+      <div><button type="button" class="btn ghost small" data-act="paste-import">Загрузить из поля</button></div>
       <div id="dataMsg" class="small"></div>
       ${ui.confirm === "wipe"
         ? `<div class="confirm"><span>Удалить все тренировки без возможности восстановления?</span><button type="button" class="btn danger small" data-act="wipe-yes">Удалить всё</button><button type="button" class="btn ghost small" data-act="cancel">Отмена</button></div>`
@@ -585,6 +588,8 @@ document.addEventListener("click", (e) => {
     case "timer-add": timerEnd += 30000; $("#timer").classList.remove("finished"); clearInterval(timerId); timerId = setInterval(tickTimer, 250); tickTimer(); return;
     case "timer-stop": stopTimer(); return;
     case "export": exportData(); return;
+    case "copy": copyData(); return;
+    case "paste-import": importText($("#backupText").value); return;
     case "wipe": ui.confirm = "wipe"; break;
     case "wipe-yes": state = structuredClone(DEFAULT_STATE); ui.confirm = null; break;
     default: return;
@@ -623,32 +628,42 @@ document.addEventListener("toggle", (e) => {
   if (el.dataset && el.dataset.hist) { if (el.open) ui.openHist = el.dataset.hist; else if (ui.openHist === el.dataset.hist) ui.openHist = null; }
 }, true);
 
+const backupJSON = () => JSON.stringify({ app: "workout-tracker", version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2);
 function exportData() {
-  const blob = new Blob([JSON.stringify({ app: "workout-tracker", version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2)], { type: "application/json" });
+  const blob = new Blob([backupJSON()], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `trenirovki-${todayISO()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+// Копирование в буфер: работает и там, где скачивание файлов запрещено.
+function copyData() {
+  const box = $("#backupText");
+  box.value = backupJSON();
+  const ok = () => { $("#dataMsg").textContent = "Копия скопирована. Сохраните её в заметках или отправьте себе."; };
+  const fallback = () => { box.focus(); box.select(); $("#dataMsg").textContent = "Выделите текст в поле ниже и скопируйте вручную."; };
+  try { navigator.clipboard.writeText(box.value).then(ok, fallback); } catch (e) { fallback(); }
+}
+function importText(text) {
+  const msg = $("#dataMsg");
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data.sessions)) throw new Error("no sessions");
+    const ids = new Set(state.sessions.map((s) => s.id));
+    const added = data.sessions.filter((s) => !ids.has(s.id));
+    state.sessions.push(...added);
+    if (data.settings && data.settings.startDate && !state.settings.startDate) state.settings.startDate = data.settings.startDate;
+    save(); render();
+    $("#dataMsg").textContent = `Загружено тренировок: ${added.length}.`;
+  } catch (err) {
+    msg.textContent = "Это не похоже на копию дневника. Нужен JSON, полученный кнопкой «Скачать копию» или «Скопировать копию».";
+  }
+}
 function importData(file) {
   if (!file) return;
   const r = new FileReader();
-  r.onload = () => {
-    const msg = $("#dataMsg");
-    try {
-      const data = JSON.parse(r.result);
-      if (!Array.isArray(data.sessions)) throw new Error("no sessions");
-      const ids = new Set(state.sessions.map((s) => s.id));
-      const added = data.sessions.filter((s) => !ids.has(s.id));
-      state.sessions.push(...added);
-      if (data.settings && data.settings.startDate && !state.settings.startDate) state.settings.startDate = data.settings.startDate;
-      save(); render();
-      $("#dataMsg").textContent = `Загружено тренировок: ${added.length}.`;
-    } catch (err) {
-      msg.textContent = "Файл не похож на копию дневника. Выберите JSON, скачанный кнопкой «Скачать копию».";
-    }
-  };
+  r.onload = () => importText(r.result);
   r.readAsText(file);
 }
 
