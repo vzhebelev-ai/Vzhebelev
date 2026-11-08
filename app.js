@@ -11,7 +11,7 @@ const DEFAULT_STATE = {
   settings: {
     startDate: "", rest: 90,
     kcal: NUTRITION.kcal, protein: NUTRITION.protein,
-    goalWeight: NUTRITION.goalWeight, goalDate: NUTRITION.goalDate,
+    goalWeight: NUTRITION.goalWeight, goalDate: NUTRITION.goalDate, nv: 2,
   },
 };
 
@@ -20,7 +20,14 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return structuredClone(DEFAULT_STATE);
     const s = JSON.parse(raw);
-    return { ...structuredClone(DEFAULT_STATE), ...s, settings: { ...DEFAULT_STATE.settings, ...(s.settings || {}) } };
+    const out = { ...structuredClone(DEFAULT_STATE), ...s, settings: { ...DEFAULT_STATE.settings, ...(s.settings || {}) } };
+    // Пересчёт под возраст и активность: старые значения по умолчанию заменяем новыми.
+    if (!out.settings.nv) {
+      if (out.settings.kcal === 2900) out.settings.kcal = NUTRITION.kcal;
+      if (out.settings.goalWeight === 67.5) out.settings.goalWeight = NUTRITION.goalWeight;
+      out.settings.nv = 2;
+    }
+    return out;
   } catch (e) {
     return structuredClone(DEFAULT_STATE);
   }
@@ -483,7 +490,7 @@ function viewPlan() {
     </section>
     <section class="panel">
       <h2>Цель: набор массы</h2>
-      <p class="small">Рост ${NUTRITION.height} см, вес ${kg(NUTRITION.startWeight)} кг → ${kg(state.settings.goalWeight)} кг к ${fmtDate(state.settings.goalDate, { day: "numeric", month: "long" })}. Питание — ${fmtNum(state.settings.kcal)} ккал и не меньше ${state.settings.protein} г белка в день, 5 приёмов пищи.</p>
+      <p class="small">${NUTRITION.age} лет, рост ${NUTRITION.height} см, вес ${kg(NUTRITION.startWeight)} кг → ${kg(state.settings.goalWeight)} кг к ${fmtDate(state.settings.goalDate, { day: "numeric", month: "long" })}. Питание — ${fmtNum(state.settings.kcal)} ккал и не меньше ${state.settings.protein} г белка в день, 5 приёмов пищи.</p>
       <ul class="plan-list">
         ${NUTRITION.meals.map((m) => `<li><span>${m.time} · ${esc(m.name)}</span><span>${m.kcal} ккал · ${m.p} г</span></li>`).join("")}
       </ul>
@@ -694,7 +701,7 @@ function viewFood() {
 
     <section class="panel">
       <h2>Мои цифры</h2>
-      <p class="small muted">Рост ${NUTRITION.height} см, старт ${kg(NUTRITION.startWeight)} кг. Калории — оценка для взрослого мужчины с умеренной активностью; поправьте по факту прибавки.</p>
+      <p class="small muted">${NUTRITION.age} лет, рост ${NUTRITION.height} см, старт ${kg(NUTRITION.startWeight)} кг; ${esc(NUTRITION.activity)}. Базовый обмен ≈ ${fmtNum(NUTRITION.bmr)} ккал, поддержание ≈ ${fmtNum(NUTRITION.maintenance)} ккал, для набора +500 ≈ ${fmtNum(NUTRITION.kcal)} ккал. Поправляйте по факту прибавки веса.</p>
       <div class="row">
         <label class="small muted" for="setKcal">Ккал в день</label><input type="number" class="plain num" id="setKcal" data-act="setnum" data-k="kcal" step="50" value="${st.kcal}" style="width:90px">
         <label class="small muted" for="setP">Белок, г</label><input type="number" class="plain num" id="setP" data-act="setnum" data-k="protein" step="5" value="${st.protein}" style="width:80px">
