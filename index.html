@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f3ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121513" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Дневник тренировок</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">Дневник<span>A / B / C</span></div>
+      <div class="week-pill" id="weekPill"></div>
+    </div>
+  </header>
+
+  <main id="view" class="wrap"></main>
+
+  <div class="timer" id="timer" hidden>
+    <div class="timer-inner">
+      <span class="timer-label">Отдых</span>
+      <span class="timer-time" id="timerTime">1:30</span>
+      <button type="button" class="btn ghost small" data-act="timer-add">+30 с</button>
+      <button type="button" class="btn ghost small" data-act="timer-stop">Стоп</button>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Разделы">
+    <div class="tabs-inner">
+      <button type="button" data-tab="workout" class="tab">Тренировка</button>
+      <button type="button" data-tab="history" class="tab">История</button>
+      <button type="button" data-tab="report" class="tab">Отчёт</button>
+      <button type="button" data-tab="plan" class="tab">План</button>
+    </div>
+  </nav>
+
+  <script src="plan.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
