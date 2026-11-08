@@ -11,7 +11,7 @@ const DEFAULT_STATE = {
   settings: {
     startDate: "", rest: 90,
     kcal: NUTRITION.kcal, protein: NUTRITION.protein,
-    goalWeight: NUTRITION.goalWeight, goalDate: NUTRITION.goalDate, nv: 2,
+    goalWeight: NUTRITION.goalWeight, goalDate: NUTRITION.goalDate, nv: 3,
   },
 };
 
@@ -26,6 +26,12 @@ function load() {
       if (out.settings.kcal === 2900) out.settings.kcal = NUTRITION.kcal;
       if (out.settings.goalWeight === 67.5) out.settings.goalWeight = NUTRITION.goalWeight;
       out.settings.nv = 2;
+    }
+    // Цель изменена на 68 кг → 2900 ккал.
+    if (out.settings.nv < 3) {
+      if (out.settings.kcal === 2700) out.settings.kcal = NUTRITION.kcal;
+      if (out.settings.goalWeight === 67) out.settings.goalWeight = NUTRITION.goalWeight;
+      out.settings.nv = 3;
     }
     return out;
   } catch (e) {
@@ -664,8 +670,8 @@ function viewFood() {
       </div>
       ${weightChart()}
       <p class="small muted">Пунктир — план набора. По плану сегодня ${kg(g.planToday)} кг. Нужный темп: <b class="num">${g.needPace > 0 ? "+" + kg(g.needPace) : "0"} кг/нед</b>${g.pace !== null ? `, ваш темп за 2 недели: <b class="num">${g.pace >= 0 ? "+" : ""}${kg(g.pace)} кг/нед</b>` : ""}.</p>
-      ${g.pace !== null && g.pace < 0.3 ? `<div class="note">Прибавка меньше +0,3 кг в неделю — добавьте 200–300 ккал: коктейль или стакан молока перед сном.</div>` : ""}
-      ${g.pace !== null && g.pace > 0.8 ? `<div class="note">Прибавка больше +0,8 кг в неделю — уберите 150–200 ккал, иначе пойдёт в жир.</div>` : ""}
+      ${g.pace !== null && g.pace < 0.4 ? `<div class="note">Прибавка меньше +0,4 кг в неделю — добавьте 200 ккал: стакан молока перед сном, через неделю — коктейль.</div>` : ""}
+      ${g.pace !== null && g.pace > 0.9 ? `<div class="note">Прибавка больше +0,9 кг в неделю — уберите 150–200 ккал, иначе пойдёт в жир.</div>` : ""}
       <div class="row">
         <input type="date" id="wDate" value="${todayISO()}" aria-label="Дата взвешивания">
         <label class="field" style="width:110px"><input type="number" id="wKg" inputmode="decimal" step="0.1" min="30" max="200" placeholder="${kg(g.last.kg)}" aria-label="Вес, кг"><span>кг</span></label>
@@ -701,7 +707,7 @@ function viewFood() {
 
     <section class="panel">
       <h2>Мои цифры</h2>
-      <p class="small muted">${NUTRITION.age} лет, рост ${NUTRITION.height} см, старт ${kg(NUTRITION.startWeight)} кг; ${esc(NUTRITION.activity)}. Базовый обмен ≈ ${fmtNum(NUTRITION.bmr)} ккал, поддержание ≈ ${fmtNum(NUTRITION.maintenance)} ккал, для набора +500 ≈ ${fmtNum(NUTRITION.kcal)} ккал. Поправляйте по факту прибавки веса.</p>
+      <p class="small muted">${NUTRITION.age} лет, рост ${NUTRITION.height} см, старт ${kg(NUTRITION.startWeight)} кг; ${esc(NUTRITION.activity)}. Базовый обмен ≈ ${fmtNum(NUTRITION.bmr)} ккал, поддержание ≈ ${fmtNum(NUTRITION.maintenance)} ккал, для набора до цели +700 ≈ ${fmtNum(NUTRITION.kcal)} ккал. Поправляйте по факту прибавки веса.</p>
       <div class="row">
         <label class="small muted" for="setKcal">Ккал в день</label><input type="number" class="plain num" id="setKcal" data-act="setnum" data-k="kcal" step="50" value="${st.kcal}" style="width:90px">
         <label class="small muted" for="setP">Белок, г</label><input type="number" class="plain num" id="setP" data-act="setnum" data-k="protein" step="5" value="${st.protein}" style="width:80px">
